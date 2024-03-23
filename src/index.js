@@ -44,13 +44,21 @@ async function getConnection() {
 // 6. ENDPOINTS //
 //=============================
 
+// mensaje de error si algun campo no existe o esta vacio
+
+const errorResponse = (message) => {
+  return {
+    success: false,
+    error: message,
+  };
+};
+
 // A) Endpoint para OBTENER el listado de todas las recetas (GET /api/recetas)
 
 server.get("/api/recetas", async (req, res) => {
   try {
+    //intenta este codigo
     const conn = await getConnection();
-
-    // console.log(req.query.search)
 
     const queryGetAllRecipes = `
         SELECT *
@@ -68,208 +76,224 @@ server.get("/api/recetas", async (req, res) => {
       info: { count: results.length },
       nombre: results,
     });
-  } 
-  catch (error) {
-    res.json({
-      success: false,
-      error: "¡Oops! 🙊 ¡Vuelve a intentarlo! 💪",
-    });
+  } catch (error) {
+    // y si no puedes, me salras este error
+    res.status(400).json(errorResponse("¡Oops! 🙊 ¡Vuelve a intentarlo! 💪"));
   }
 });
 
-// mensaje de error si algun campo no existe o esta vacio
-
-const errorResponse = (message) => {
-    return {
-        success: false,
-        error: message,
-    };
-};
 // B) Endpoint para OBTENER una receta por su ID (GET /api/recetas/:id)
 
 server.get("/api/recetas/:id", async (req, res) => {
+  const recipeId = req.params.id;
 
-    const recipeId = req.params.id;
+  if (isNaN(parseInt(recipeId))) {
+    // si req.params.id no es un numero salta el error
+    return res
+      .status(400)
+      .json(
+        errorResponse("¡🚫 Error culinario! ¡El id debe ser un número! 🧐")
+      );
+  }
 
-    if(isNaN(parseInt(recipeId))){   // si req.params.id no es un numero salta el error
-        return res.status(400).json(errorResponse("¡🚫 Error culinario! ¡El id debe ser un número! 🧐"));
-    }
+  try {
+    const conn = await getConnection();
 
-    try {
-
-        const conn = await getConnection();
-
-        const queryGetOneRecipe = `
+    const queryGetOneRecipe = `
             SELECT *
             FROM recetas
             WHERE id LIKE ?;`;
 
-        const [results] = await conn.query(queryGetOneRecipe, [req.params.id]);
+    const [results] = await conn.query(queryGetOneRecipe, [req.params.id]);
 
-        conn.end();
+    conn.end();
 
-        if(results.length === 0){  // si
-            return res.status(400).json(errorResponse("¡🚫 Error culinario! ¡Este id no existe! 😥"));
-        }
-
-        res.json({
-            success: true,
-            receta: results[0]
-        });
-
-    } 
-    catch (error) {
-    res.json({
-        success: false,
-        error: "¡Oops! 🙊 ¡Vuelve a intentarlo! 💪",
-    });
+    if (results.length === 0) {
+      // el array esta vacio me salta el error
+      return res
+        .status(400)
+        .json(errorResponse("¡🚫 Error culinario! ¡Este id no existe! 😥"));
     }
-});
 
+    res.json({
+      success: true,
+      receta: results[0],
+    });
+  } catch (error) {
+    res.status(400).json(errorResponse("¡Oops! 🙊 ¡Vuelve a intentarlo! 💪"));
+  }
+});
 
 // C) Endpoint para CREAR una nueva receta (POST /api/recetas)
 
 server.post("/api/recetas", async (req, res) => {
   try {
-        if (!req.body.nombre || req.body.nombre === "" || !req.body.ingredientes || req.body.ingredientes === "" || !req.body.instrucciones || req.body.instrucciones === "") {
+    if (
+      !req.body.nombre ||
+      req.body.nombre === "" ||
+      !req.body.ingredientes ||
+      req.body.ingredientes === "" ||
+      !req.body.instrucciones ||
+      req.body.instrucciones === ""
+    ) {
+      res
+        .status(400)
+        .json(errorResponse("¡🚫 Error culinario! ¡Revisa los detalles! 🧐"));
+      return;
+    }
 
-        res.status(400).json(errorResponse("¡🚫 Error culinario! ¡Revisa los detalles! 🧐"));  
-        return;
-        }
-        
-        const conn = await getConnection();
+    const conn = await getConnection();
 
-        const queryRepeatRecipe = `
+    // Query de comprobacion de si existe una receta con el mismo nombre
+    const queryRepeatRecipe = ` 
             SELECT nombre 
             FROM recetas
-            WHERE nombre = ?`
+            WHERE nombre = ?`;
 
-        const [repeatResult] = await conn.query(queryRepeatRecipe, [req.body.nombre]);
-        console.log(repeatResult);
+    const [repeatResult] = await conn.query(queryRepeatRecipe, [
+      req.body.nombre,
+    ]);
+    console.log(repeatResult);
 
-        if(repeatResult.length > 0){
-            res.status(400).json(errorResponse("¡🚫 Error culinario! ¡Esta receta ya existe! 🧐"));  
-            return;
-        }
+    if (repeatResult.length > 0) {
+      // si el array no esta vacio es que ya hay una receta con ese nombre asi que me saltas el error
+      res
+        .status(400)
+        .json(errorResponse("¡🚫 Error culinario! ¡Esta receta ya existe! 🧐"));
+      return; // y si no, continuas con el proceso
+    }
 
-        const queryInsertRecipe = `
+    const queryInsertRecipe = `
         INSERT INTO recetas (nombre, ingredientes, instrucciones)
         VALUES (?,?,?);`;
 
-        const [insertResult] = await conn.execute(queryInsertRecipe, [
-        req.body.nombre,
-        req.body.ingredientes,
-        req.body.instrucciones,
-        ]);
+    const [insertResult] = await conn.execute(queryInsertRecipe, [
+      req.body.nombre,
+      req.body.ingredientes,
+      req.body.instrucciones,
+    ]);
 
-        conn.end();
+    conn.end();
 
-        res.json({
-          success: true,
-          message: "¡Receta creada! 🎉 A cocinar se ha dicho. 🍳",
-          id: insertResult.insertId,
-        });
-    }
-
-    catch (error) {
-        res.json({
-        success: false,
-        error: "¡Oops! 🙊 ¡Vuelve a intentarlo! 💪",
-        });
-    }
+    res.json({
+      success: true,
+      message: "¡Receta creada! 🎉 A cocinar se ha dicho. 🍳",
+      id: insertResult.insertId,
+    });
+  } catch (error) {
+    res.status(400).json(errorResponse("¡Oops! 🙊 ¡Vuelve a intentarlo! 💪"));
+  }
 });
 
 // D) Endpoint para ACTUALIZAR una receta existente (PUT /api/recetas/:id)
 
 server.put("/api/recetas/:id", async (req, res) => {
+  const recipeId = req.params.id;
 
+  if (isNaN(parseInt(recipeId))) {
+    // si req.params.id no es un numero salta el error
+    return res
+      .status(400)
+      .json(
+        errorResponse("¡🚫 Error culinario! ¡El id debe ser un número! 🧐")
+      );
+  }
 
-    const recipeId = req.params.id;
-
-    if(isNaN(parseInt(recipeId))){   // si req.params.id no es un numero salta el error
-        return res.status(400).json(errorResponse("¡🚫 Error culinario! ¡El id debe ser un número! 🧐"));
+  try {
+    if (
+      !req.body.nombre ||
+      req.body.nombre === "" ||
+      !req.body.ingredientes ||
+      req.body.ingredientes === "" ||
+      !req.body.instrucciones ||
+      req.body.instrucciones === ""
+    ) {
+      res
+        .status(400)
+        .json(errorResponse("¡🚫 Error culinario! ¡Revisa los detalles! 🧐"));
+      return;
     }
 
-    try {
-        if (!req.body.nombre || req.body.nombre === "" || !req.body.ingredientes || req.body.ingredientes === "" || !req.body.instrucciones || req.body.instrucciones === "") {
+    const conn = await getConnection();
 
-        res.status(400).json(errorResponse("¡🚫 Error culinario! ¡Revisa los detalles! 🧐"));
-        return;
-        }
+    // Query de comprobacion de si el id existe
 
-        const conn = await getConnection();
-
-        const queryCheckId = `
+    const queryCheckId = `
         SELECT *
         FROM recetas
-        WHERE id LIKE ?;`
+        WHERE id LIKE ?;`;
 
-        const [checkIdResult] = await conn.query(queryCheckId, [recipeId]);
-        
+    const [checkIdResult] = await conn.query(queryCheckId, [recipeId]);
 
-        if(checkIdResult.length === 0){
-            res.status(400).json(errorResponse("¡🚫 Error culinario! ¡Este id no existe! 🧐"));  
-            return;
-        }
+    if (checkIdResult.length === 0) {
+      // si el array esta vacio es que el id no existe asique me saltas el error
+      res
+        .status(400)
+        .json(errorResponse("¡🚫 Error culinario! ¡Este id no existe! 🧐"));
+      return;
+    }
 
-        const queryUpdateRecipe = `
+    const queryUpdateRecipe = `
             UPDATE recetas
             SET nombre = ?, ingredientes = ?, instrucciones = ?
             WHERE id = ?`;
 
-        const [updateResults] = await conn.execute(queryUpdateRecipe, [
-        req.body.nombre,
-        req.body.ingredientes,
-        req.body.instrucciones,
-        req.params.id,
-        ]);
+    const [updateResults] = await conn.execute(queryUpdateRecipe, [
+      req.body.nombre,
+      req.body.ingredientes,
+      req.body.instrucciones,
+      req.params.id,
+    ]);
 
-        conn.end();
+    conn.end();
 
-        res.json({
-        success: true,
-        message: "¡Receta mejorada! 🎉¡A disfrutar cocinando! 🍳",
-        });
-    } 
-    catch (error) {
-        res.json({
-        success: false,
-        error: "¡Oops! 🙊 ¡Vuelve a intentarlo! 💪",
-        });
-    }
+    res.json({
+      success: true,
+      message: "¡Receta mejorada! 🎉¡A disfrutar cocinando! 🍳",
+    });
+  } catch (error) {
+    res.status(400).json(errorResponse("¡Oops! 🙊 ¡Vuelve a intentarlo! 💪"));
+  }
 });
 
 // E) Endpoint para BORRAR una receta (DELETE /api/recetas/:id)
 
 server.delete("/api/recetas/:id", async (req, res) => {
+  const recipeId = req.params.id;
 
-    const recipeId = req.params.id;
-
-    if(isNaN(parseInt(recipeId))){   // si req.params.id no es un numero salta el error
-        return res.status(400).json(errorResponse("¡🚫 Error culinario! ¡El id debe ser un número! 🧐"));
-    }
+  if (isNaN(parseInt(recipeId))) {
+    // si req.params.id no es un numero salta el error
+    return res
+      .status(400)
+      .json(
+        errorResponse("¡🚫 Error culinario! ¡El id debe ser un número! 🧐")
+      );
+  }
 
   try {
-    
     const conn = await getConnection();
 
     const queryCheckId = `
         SELECT *
         FROM recetas
-        WHERE id LIKE ?;`
+        WHERE id LIKE ?;`;
 
     const [checkIdResult] = await conn.query(queryCheckId, [recipeId]);
 
-    if(checkIdResult.length === 0){
-        res.status(400).json(errorResponse("¡🚫 Error culinario! ¡Este id no existe! 🧐"));  
-        return;
+    if (checkIdResult.length === 0) {
+      res
+        .status(400)
+        .json(errorResponse("¡🚫 Error culinario! ¡Este id no existe! 🧐"));
+      return;
     }
 
     const queryDeleteRecipe = `
         DELETE FROM recetas
             WHERE id = ?`;
 
-    const [deleteResults] = await conn.execute(queryDeleteRecipe, [req.params.id]);
+    const [deleteResults] = await conn.execute(queryDeleteRecipe, [
+      req.params.id,
+    ]);
 
     conn.end();
 
@@ -277,11 +301,7 @@ server.delete("/api/recetas/:id", async (req, res) => {
       success: true,
       message: "Receta evaporada con éxito 🗑️",
     });
-  } 
-  catch (error) {
-    res.json({
-      success: false,
-      error: "¡Oops! 🙊 ¡Vuelve a intentarlo! 💪",
-    });
+  } catch (error) {
+    res.status(400).json(errorResponse("¡Oops! 🙊 ¡Vuelve a intentarlo! 💪"));
   }
 });
